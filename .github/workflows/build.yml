@@ -5,113 +5,110 @@ on:
     tags:
       - '*'
   release:
-    types: [created]
+    types: [published]
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - os: macos-latest
-            arch: x86_64
-          - os: macos-latest
-            arch: arm64
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [x86_64, arm64]
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Set up Boost on Linux
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y libboost-all-dev
-
-    - name: Set up Boost on macOS
-      if: matrix.os == 'macos-latest'
-      run: brew install boost
-
-    - name: Set up Boost on Windows
-      if: matrix.os == 'windows-latest'
-      run: choco install boost-msvc-14.1
-
-    - name: Install CMake on Linux
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y cmake
-
-    - name: Install CMake on macOS
-      if: matrix.os == 'macos-latest'
-      run: brew install cmake
-
-    - name: Install CMake on Windows
-      if: matrix.os == 'windows-latest'
-      run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-
-    - name: Initialize submodules
-      run: git submodule update --init --force
-
-    - name: Create build directory
-      run: mkdir _build
-
-    - name: Run CMake for macOS
-      if: matrix.os == 'macos-latest'
+    - name: Install dependencies
       run: |
-        cd _build
-        cmake -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} ..
-        cmake --build .
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake
 
-    - name: Combine macOS binaries
-      if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
+    - name: Build for Ubuntu
+      if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
       run: |
-        mkdir -p ../combined_build
-        mv _build/BtMigrate ../combined_build/BtMigrate_x86_64
-    - name: Combine macOS binaries
-      if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
-      run: |
-        mv _build/BtMigrate ../combined_build/BtMigrate_arm64
-    - name: Create Universal macOS binary
-      if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
-      run: |
-        lipo -create -output ../combined_build/BtMigrate ../combined_build/BtMigrate_x86_64 ../combined_build/BtMigrate_arm64
-        chmod +x ../combined_build/BtMigrate
-        cd ../combined_build
-        zip -r output.zip BtMigrate
-
-    - name: Run CMake for other OSes
-      if: matrix.os != 'macos-latest'
-      run: |
-        cd _build
+        mkdir build
+        cd build
         cmake ..
         cmake --build .
 
-    - name: Build pugixml for Windows
-      if: matrix.os == 'windows-latest'
+    - name: Build for macOS (Intel)
+      if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
       run: |
-        mkdir -p pugixml
-        cd pugixml
-        curl -L -o pugixml.zip https://github.com/zeux/pugixml/releases/download/v1.14/pugixml-1.14.zip
-        tar -xf pugixml.zip --strip-components=1
-        cd ..
-        mkdir -p _build/pugixml
-        cd _build/pugixml
-        cmake ../../pugixml
-        cmake --build . --config Release
-        copy Release\pugixml.dll ..
-        cd ..
-        zip -r output.zip BtMigrate.exe pugixml.dll
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build .
 
-    - name: Archive the build output for Linux and macOS
-      if: matrix.os == 'ubuntu-latest' || (matrix.os == 'macos-latest' && matrix.arch == 'arm64')
+    - name: Build for macOS (ARM)
+      if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
       run: |
-        cd _build
-        chmod +x BtMigrate
-        zip -r output.zip BtMigrate
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build .
 
-    - name: Upload build artifact
+    - name: Build for Windows
+      if: matrix.os == 'windows-latest' && matrix.arch == 'x86_64'
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build .
+        # Extract pugixml.zip and build pugixml.dll
+        curl -OL https://github.com/pugixml/pugixml/releases/download/v1.12.2/pugixml-1.12.2-win32.zip
+        unzip pugixml-1.12.2-win32.zip
+        cd pugixml-1.12.2-win32
+        cmake .
+        cmake --build .
+
+    - name: Create zip archive for Ubuntu
+      if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
+      run: |
+        chmod +x build/BtMigrate
+        zip -r output.zip build/BtMigrate
+
+    - name: Create zip archive for macOS (Intel)
+      if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
+      run: |
+        chmod +x build/BtMigrate
+        zip -r output.zip build/BtMigrate
+
+    - name: Create zip archive for macOS (ARM)
+      if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
+      run: |
+        chmod +x build/BtMigrate
+        zip -r output.zip build/BtMigrate
+
+    - name: Create zip archive for Windows
+      if: matrix.os == 'windows-latest' && matrix.arch == 'x86_64'
+      run: |
+        chmod +x build/BtMigrate.exe
+        zip -r output.zip build/BtMigrate.exe pugixml.dll
+
+    - name: Upload artifact for Ubuntu
       uses: actions/upload-artifact@v2
       with:
-        name: build-${{ matrix.os }}-${{ matrix.arch }}
-        path: _build/output.zip
+        name: build-ubuntu-latest-x86_64
+        path: output.zip
+
+    - name: Upload artifact for macOS (Intel)
+      uses: actions/upload-artifact@v2
+      with:
+        name: build-macos-latest-x86_64
+        path: output.zip
+
+    - name: Upload artifact for macOS (ARM)
+      uses: actions/upload-artifact@v2
+      with:
+        name: build-macos-latest-arm64
+        path: output.zip
+
+    - name: Upload artifact for Windows
+      uses: actions/upload-artifact@v2
+      with:
+        name: build-windows-latest-x86_64
+        path: output.zip
 
   release:
     needs: build
@@ -120,69 +117,74 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Download build artifacts for Ubuntu
+    - name: Download artifact for Ubuntu
       uses: actions/download-artifact@v2
       with:
         name: build-ubuntu-latest-x86_64
         path: ./build-ubuntu
 
-    - name: Download build artifacts for macOS x86_64
+    - name: Download artifact for macOS (Intel)
       uses: actions/download-artifact@v2
       with:
         name: build-macos-latest-x86_64
         path: ./build-macos-x86_64
 
-    - name: Download build artifacts for macOS arm64
+    - name: Download artifact for macOS (ARM)
       uses: actions/download-artifact@v2
       with:
         name: build-macos-latest-arm64
         path: ./build-macos-arm64
 
-    - name: Download build artifacts for Windows
+    - name: Download artifact for Windows
       uses: actions/download-artifact@v2
       with:
         name: build-windows-latest-x86_64
         path: ./build-windows
 
-    - name: Create GitHub Release
-      id: create_release
-      uses: actions/create-release@v1
+    - name: Create release
+      id: create-release
+      uses: actions/create-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        body: |
-          Release notes for ${{ github.ref }}.
-        draft: false
-        prerelease: false
+        TAG_NAME: "v1.0"
+        RELEASE_NAME: "Release v1.0"
 
-    - name: Upload Release Asset for Ubuntu
-      uses: actions/upload-release-asset@v1
+    - name: Upload release asset for Ubuntu
+      uses: actions/upload-release-asset@v2
+      id: upload-ubuntu-asset
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build-ubuntu/output.zip
-        asset_name: build-ubuntu.zip
-        asset_content_type: application/zip
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        file_path: ./build-ubuntu/output.zip
+        asset_name: "BtMigrate-Ubuntu-x86_64.zip"
 
-    - name: Upload Release Asset for macOS
-      uses: actions/upload-release-asset@v1
+    - name: Upload release asset for macOS (Intel)
+      uses: actions/upload-release-asset@v2
+      id: upload-macos-intel-asset
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build-macos-arm64/output.zip
-        asset_name: build-macos.zip
-        asset_content_type: application/zip
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        file_path: ./build-macos-x86_64/output.zip
+        asset_name: "BtMigrate-macOS-x86_64.zip"
 
-    - name: Upload Release Asset for Windows
-      uses: actions/upload-release-asset@v1
+    - name: Upload release asset for macOS (ARM)
+      uses: actions/upload-release-asset@v2
+      id: upload-macos-arm-asset
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build-windows/output.zip
-        asset_name: build-windows.zip
-        asset_content_type: application/zip
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        file_path: ./build-macos-arm64/output.zip
+        asset_name: "BtMigrate-macOS-arm64.zip"
+
+    - name: Upload release asset for Windows
+      uses: actions/upload-release-asset@v2
+      id: upload-windows-asset
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        file_path: ./build-Windows/output.zip
+        asset_name: "BtMigrate-Windows-x86_64.zip"
