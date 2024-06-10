@@ -53,7 +53,8 @@ jobs:
     - name: Create build directory
       run: mkdir _build
 
-    - name: Run CMake
+    - name: Run CMake for macOS
+      if: matrix.os == 'macos-latest'
       run: |
         cd _build
         cmake -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} ..
@@ -76,17 +77,27 @@ jobs:
         cd ../combined_build
         zip -r output.zip BtMigrate
 
-    - name: Build and include pugixml.dll in Windows build
+    - name: Run CMake for other OSes
+      if: matrix.os != 'macos-latest'
+      run: |
+        cd _build
+        cmake ..
+        cmake --build .
+
+    - name: Build pugixml for Windows
       if: matrix.os == 'windows-latest'
       run: |
-        git clone https://github.com/zeux/pugixml.git
+        mkdir -p pugixml
         cd pugixml
-        mkdir build
-        cd build
-        cmake ..
+        curl -L -o pugixml.zip https://github.com/zeux/pugixml/releases/download/v1.14/pugixml-1.14.zip
+        tar -xf pugixml.zip --strip-components=1
+        cd ..
+        mkdir -p _build/pugixml
+        cd _build/pugixml
+        cmake ../../pugixml
         cmake --build . --config Release
-        copy Release\pugixml.dll ../../_build
-        cd ../../_build
+        copy Release\pugixml.dll ..
+        cd ..
         zip -r output.zip BtMigrate.exe pugixml.dll
 
     - name: Archive the build output for Linux and macOS
